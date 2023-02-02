@@ -10,7 +10,11 @@
 library(tidyverse)
 library(aws.s3)
 library(leaflet)
-
+library(tigris)
+library(ggplot2)
+library(magrittr)
+library(sf)
+library(htmltools)
 ######################
 #### Data Import ##### 
 ######################
@@ -63,13 +67,106 @@ state_dac_summary <- cejest_q_1 %>%
 write.csv(state_dac_summary,"results/state-dac-summary_v1.csv", row.names = FALSE)
 ## END QUESTION 1 ### 
 
+## QUESTION 2: Count and distribution of tracts by indicator by state ## 
+## Generate list of indicators
+ind_list = names(cejest_raw)[grep("",names(cejest_raw))]
+
+## Create a data frame containing counts of disadvantaged tracts
+df_count_ind = data.frame(
+  `State/Territory` = unique(cejest_raw$`State/Territory`)
+) %>% rename("State/Territory" = "State.Territory")
+
+tot_number_of_tracts_per_state = cejest_raw %>% group_by(`State/Territory`) %>% tally()
+colnames(tot_number_of_tracts_per_state)[2] = "tot_num_tracts_per_state"
+
+df_count_ind = df_count_ind %>% left_join(tot_number_of_tracts_per_state, by = 'State/Territory')
 
 
+## Generating table
+for (i in seq_along(ind_list)){
+  # i = 1
+  ind = ind_list[i]
+  df = cejest_raw %>% filter(cejest_raw[,which(colnames(cejest_raw)==ind)] == TRUE)
+  countdf = df %>% group_by(`State/Territory`) %>% tally(!!sym(ind) == TRUE)
+  colnames(countdf)[2] = ind
+  
+  df_count_ind = df_count_ind %>% left_join(countdf, by = "State/Territory") %>% replace(is.na(.), 0)
+  df_count_ind[[paste0("percent_",ind)]] = df_count_ind[,which(colnames(df_count_ind)==ind)]/df_count_ind$tot_num_tracts_per_state * 100
+}
+
+### create bar plots for percentage of disadvantaged tracts per state
+pdf("results/plots/state_barplot_by_indicator.pdf", width = 8, height = 6)
+for (i in seq_along(ind_list)){
+p = ggplot(data=df_count_ind, aes(x=`State/Territory`, y=!!sym(paste0("percent_",ind_list[i]))))+theme_bw() +
+  geom_bar(stat="identity") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+                                    panel.grid.major.x = element_blank(),
+                                    panel.grid.minor.x = element_blank())+
+  ylab(gsub("\\?", "", gsub("Greater than or equal to the 90th percentile for ","% DAC for ",  ind_list[i])))
+print(p)
+}
+dev.off()
+## writing out as csv ## 
+write.csv(df_count_ind,"results/state-indicator_counts.csv", row.names = FALSE)
+## END QUESTION 2 ### 
 
 
+## QUESTION 3: Counts of indicators by tracts then summarize by state ##
+# average number of threshold exceeded/per tract per state
+df_sum_counts_per_state = cejest_raw %>%
+  group_by(`State/Territory`)%>%
+  tally(`Total threshold criteria exceeded`)
+df_sum_counts_per_state = df_sum_counts_per_state %>% rename(thd_exceeded_per_state = n) %>% left_join(df_count_ind[,1:2], by = "State/Territory")
+# average number of categories exceeded/per tract per state
+temp = cejest_raw %>%
+  group_by(`State/Territory`)%>%
+  tally(`Total categories exceeded`) %>% rename(cat_exceeded_per_state = n)
+df_sum_counts_per_state = df_sum_counts_per_state %>% left_join(temp)
+n_disadvantaged_tracts = cejest_cleaned_v1 %>% select(`State/Territory`, "state_tract_dac_n") %>% unique()
+df_sum_counts_per_state = df_sum_counts_per_state %>% left_join(n_disadvantaged_tracts)
+df_sum_counts_per_state = df_sum_counts_per_state %>% mutate(n_thd_exceeded_per_dac = thd_exceeded_per_state/state_tract_dac_n,
+                                                             n_cat_exceeded_per_dac = cat_exceeded_per_state/state_tract_dac_n)
+
+## writing out as csv ## 
+write.csv(df_sum_counts_per_state,"results/state-avg_cat_threshold_exceeded_per_dac.csv", row.names = FALSE)
+
+## END QUESTION 3 ### 
 
 
+## QUESTION 4:  Census tract map of indicator count by census tract ##
+state_list  = unique(cejest_cleaned_v1$`State/Territory`)
+US_tracts = data.frame()
+for ( i in seq_along(state_list)) {
+  temp = tracts(state = state_list[i],year = 2010)
+  US_tracts = rbind(US_tracts,temp)
+}
+US_tracts_backup = US_tracts
+US_tracts_simp = US_tracts %>% st_simplify(dTolerance = 50000)
+US_tracts = US_tracts %>% select("GEOID10","geometry") %>% right_join(cejest_raw %>% rename(GEOID10 = `Census tract 2010 ID`),by = "GEOID10")
 
+
+geo_data = US_tracts %>% filter(!!sym(ind_list[i]) == TRUE)
+labels <-sprintf(
+    "<strong>%s</strong><br/> %s %s",
+    gsub("Greater than or equal to the 90th percentile for ","",  ind_list[i]), geo_data$`County Name`,geo_data$`State/Territory` )%>%lapply(htmltools::HTML)
+
+leaflet() %>%
+  addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery") %>%
+  addProviderTiles(providers$Stamen.TonerLite, group = "Toner Lite") %>%
+  addLayersControl(baseGroups = c("Toner Lite", "World Imagery")) %>%
+  addPolygons(data = geo_data,smoothFactor = 2, weight = 0.2, color = "black", opacity = 1, fillOpacity = 1,
+              fillColor = "grey",
+              highlightOptions = highlightOptions(color = "white", weight = 2,
+                                                  bringToFront = TRUE),
+              label = ~labels,
+              labelOptions = labelOptions(noHide = F, textsize = "15px")
+              ) %>%
+  setView(lat = 41.62531, lng = -97.71755, zoom = 3)
+
+## save US tracts data
+st_write(US_tracts %>% select(GEOID10,geometry), "results/US_tracts_CejstV1_2010_boundary.shp")
+
+## END QUESTION 4 ### 
 
 
 
