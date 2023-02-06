@@ -69,7 +69,7 @@ write.csv(state_dac_summary,"results/state-dac-summary_v1.csv", row.names = FALS
 
 ## QUESTION 2: Count and distribution of tracts by indicator by state ## 
 ## Generate list of indicators
-ind_list = names(cejest_raw)[grep("",names(cejest_raw))]
+ind_list = names(cejest_raw)[grep("Greater than or equal to the 90th percentile for",names(cejest_raw))]
 
 ## Create a data frame containing counts of disadvantaged tracts
 df_count_ind = data.frame(
@@ -144,7 +144,7 @@ US_tracts_backup = US_tracts
 US_tracts_simp = US_tracts %>% st_simplify(dTolerance = 50000)
 US_tracts = US_tracts %>% select("GEOID10","geometry") %>% right_join(cejest_raw %>% rename(GEOID10 = `Census tract 2010 ID`),by = "GEOID10")
 
-
+i = 1
 geo_data = US_tracts %>% filter(!!sym(ind_list[i]) == TRUE)
 labels <-sprintf(
     "<strong>%s</strong><br/> %s %s",
