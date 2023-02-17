@@ -15,6 +15,7 @@ library(ggplot2)
 library(magrittr)
 library(sf)
 library(htmltools)
+library(reshape2)
 ######################
 #### Data Import ##### 
 ######################
@@ -41,6 +42,32 @@ cejest_cleaned_v1 <- cejest_raw %>%
               rename(state_tract_n = n)%>%
               mutate(dac = ifelse(`Identified as disadvantaged` == TRUE, 1,0))%>%
               mutate(state_tract_dac_n  = sum(dac, na.rm = TRUE))
+
+cejest_issue = cejest_raw %>% 
+  select("Census tract 2010 ID", `State/Territory`, `Is low income?`,
+         c(grep("Greater than or equal to the 90th percentile for",names(cejest_raw)))) 
+names(cejest_issue)[1:2] = c("GEOID10","State")
+
+cejest_issue_melt = melt(cejest_issue, id = c("GEOID10","State"))
+cejest_issue_melt = cejest_issue_melt %>% mutate(variable = gsub("\\?", "", gsub("Greater than or equal to the 90th percentile for ","",  variable)))
+cejest_issue_true = cejest_issue_melt %>% filter(value == TRUE) 
+###
+# filter out duplicated threshold to avoid double counting
+duplicate_thresholds = c("is low income",
+                         "share of properties at risk of flood in 30 years and is low income",
+                         "share of properties at risk of fire in 30 years and is low income")
+cejest_issue_true = cejest_issue_true %>% filter(!variable %in% duplicate_thresholds)
+category = read.csv("category.csv")
+cejest_issue_true = cejest_issue_true %>% left_join(category, by = "variable")
+cejest_issue_true$category = factor(cejest_issue_true$category, levels = c("Climate Change",
+                                                                           "Energy",
+                                                                           "Health",
+                                                                           "Housing",
+                                                                           "Legacy Pollution",
+                                                                           "Transportation",
+                                                                           "Water/Wastewater",
+                                                                           "Workforce Development"))
+df_issues_count = cejest_issue_true %>% group_by(State) %>%count(category)
 
 ############################
 #### End Data Cleaning ##### 
@@ -106,6 +133,7 @@ p = ggplot(data=df_count_ind, aes(x=`State/Territory`, y=!!sym(paste0("percent_"
 print(p)
 }
 dev.off()
+
 ## writing out as csv ## 
 write.csv(df_count_ind,"results/state-indicator_counts.csv", row.names = FALSE)
 ## END QUESTION 2 ### 
@@ -126,7 +154,58 @@ n_disadvantaged_tracts = cejest_cleaned_v1 %>% select(`State/Territory`, "state_
 df_sum_counts_per_state = df_sum_counts_per_state %>% left_join(n_disadvantaged_tracts)
 df_sum_counts_per_state = df_sum_counts_per_state %>% mutate(n_thd_exceeded_per_dac = thd_exceeded_per_state/state_tract_dac_n,
                                                              n_cat_exceeded_per_dac = cat_exceeded_per_state/state_tract_dac_n)
-
+# work on issues count
+df_issues_count = df_issues_count %>% left_join(unique(df_sum_counts_per_state %>% select(`State/Territory`,
+                                                                                    "state_tract_dac_n",
+                                                                                    "tot_num_tracts_per_state") %>% dplyr::rename(State =`State/Territory`)))
+df_issues_count = df_issues_count %>% mutate(cat_per_dac = n/state_tract_dac_n) %>% dplyr:: rename(cat_per_state = n)
+# bar plot of stacked category plot
+pdf("results/plots/state_issue_barplot.pdf", width = 14, height = 6)
+ggplot(df_issues_count, aes(fill=category, x=State, y = cat_per_dac)) + 
+  geom_bar(position="stack", stat="identity") +theme_bw()+ 
+  scale_fill_manual(values = c("#009E73", # climate change
+                               "#F98E1D", # Energy papaya
+                               "#DC267F", # health ruby stone
+                               "grey", # housing
+                               "#C04000", #legacy pollution (mahogany)
+                               "#3A3B3C", # transportation (dark grey)
+                               "#0F52BA", # water sapphire blue
+                               "#ffdd05")) + #workforce development speed yellow
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        legend.position = "bottom") 
+ggplot(df_issues_count  %>% group_by(State) %>% top_n(1,cat_per_dac) , aes(fill=category, x=State, y = cat_per_dac)) + 
+  geom_bar(position="stack", stat="identity") +theme_bw()+ 
+  scale_fill_manual(values = c("#009E73", # climate change
+                               "#F98E1D", # Energy papaya
+                               "#DC267F", # health ruby stone
+                               "grey", # housing
+                               "#C04000", #legacy pollution (mahogany)
+                               "#3A3B3C", # transportation (dark grey)
+                               "#0F52BA", # water sapphire blue
+                               "#ffdd05")) + #workforce development speed yellow
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        legend.position = "bottom"
+        ) + ggtitle("Most prominant EJ category of a state")
+ggplot(df_issues_count %>% filter(!category == "Workforce Development") %>% group_by(State) %>% top_n(1,cat_per_dac) , aes(fill=category, x=State, y = cat_per_dac)) + 
+  geom_bar(position="stack", stat="identity") +theme_bw()+ 
+  scale_fill_manual(values = c("#009E73", # climate change
+                               "#F98E1D", # Energy papaya
+                               "#DC267F", # health ruby stone
+                               "grey", # housing
+                               "#C04000", #legacy pollution (mahogany)
+                               "#3A3B3C", # transportation (dark grey)
+                               "#0F52BA", # water sapphire blue
+                               "#ffdd05")) + #workforce development speed yellow
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        legend.position = "bottom"
+  ) + ggtitle("Most prominant EJ category of a state (exclude workforce development)")
+dev.off()
 ## writing out as csv ## 
 write.csv(df_sum_counts_per_state,"results/state-avg_cat_threshold_exceeded_per_dac.csv", row.names = FALSE)
 
