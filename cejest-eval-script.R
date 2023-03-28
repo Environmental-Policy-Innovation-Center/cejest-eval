@@ -2,10 +2,13 @@
 ################################
 #### Analysis of CEJEST v1 ##### 
 ################################
+## Created by Gabe Watson and Jack Ding for Environmental Policy Center CEJST evaluation 1.31.2023 ## 
+## Results from this analysis are curated in this blog post: https://www.policyinnovation.org/blog/cejst-simple-map-big-implications ## 
+## Contact Gabe Watson - gabe@policyinnovation.org for questions ## 
 
-## See here for documentation ## 
-## https://docs.google.com/document/d/1hqYa-I8bqMoRbaJK-EBtRxJ9RX09ehGX6qPvjq0alA4/edit# ## 
-## Created by Gabe Watson 1.31.2023 ## 
+## NOTICE ## 
+## This script is covered by a Creative Commons Licence and can be used for non commercial purposes only ##
+## Publishing of visualizations and data generated in this script should be attributed to the Environmental Policy Innovation Center ## 
 
 library(tidyverse)
 library(aws.s3)
@@ -16,18 +19,18 @@ library(magrittr)
 library(sf)
 library(htmltools)
 library(RColorBrewer)
+library(ggformula)
+library(reshape2)
+
+
 ######################
 #### Data Import ##### 
 ######################
-
 ## CEJEST V1 Download - in our AWS folder ##
 cejest_raw <- read_csv(get_object(object = "ej-data/cejest-v1/1.0-communities.csv", bucket = "tech-team-data"))
-
-
 ##########################
 #### End Data Import ##### 
 ##########################
-
 
 
 ########################
@@ -43,6 +46,44 @@ cejest_cleaned_v1 <- cejest_raw %>%
   rename(state_tract_n = n)%>%
   mutate(dac = ifelse(`Identified as disadvantaged` == TRUE, 1,0))%>%
   mutate(state_tract_dac_n  = sum(dac, na.rm = TRUE))
+
+
+## This file can be used to answer multiple questions! ## 
+cejest_cleaned_v1 <- cejest_raw %>%
+  select(c(1,2,3,'Total threshold criteria exceeded','Total categories exceeded','Total population','Identified as disadvantaged'))%>%
+  group_by(`State/Territory`)%>%
+  mutate(state_pop = sum(`Total population`, na.rm = TRUE))%>%
+  add_tally()%>%
+  rename(state_tract_n = n)%>%
+  mutate(dac = ifelse(`Identified as disadvantaged` == TRUE, 1,0))%>%
+  mutate(state_tract_dac_n  = sum(dac, na.rm = TRUE))
+
+cejest_issue = cejest_raw %>% 
+  select("Census tract 2010 ID", `State/Territory`, `Is low income?`,
+         c(grep("Greater than or equal to the 90th percentile for",names(cejest_raw)))) 
+names(cejest_issue)[1:2] = c("GEOID10","State")
+
+cejest_issue_melt = melt(cejest_issue, id = c("GEOID10","State"))
+cejest_issue_melt = cejest_issue_melt %>% mutate(variable = gsub("\\?", "", gsub("Greater than or equal to the 90th percentile for ","",  variable)))
+cejest_issue_true = cejest_issue_melt %>% filter(value == TRUE) 
+
+# filter out duplicated threshold to avoid double counting
+duplicate_thresholds = c("is low income",
+                         "share of properties at risk of flood in 30 years and is low income",
+                         "share of properties at risk of fire in 30 years and is low income")
+cejest_issue_true = cejest_issue_true %>% filter(!variable %in% duplicate_thresholds)
+category = read.csv("category.csv")
+cejest_issue_true = cejest_issue_true %>% left_join(category, by = "variable")
+cejest_issue_true$category = factor(cejest_issue_true$category, levels = c("Climate Change",
+                                                                           "Energy",
+                                                                           "Health",
+                                                                           "Housing",
+                                                                           "Legacy Pollution",
+                                                                           "Transportation",
+                                                                           "Water/Wastewater",
+                                                                           "Workforce Development"))
+df_issues_count = cejest_issue_true %>% group_by(State) %>%count(category)
+
 
 ############################
 #### End Data Cleaning ##### 
@@ -109,7 +150,7 @@ for (i in seq_along(ind_list)){
 }
 dev.off()
 ## writing out as csv ## 
-#write.csv(df_count_ind,"results/state-indicator_counts.csv", row.names = FALSE)
+##write.csv(df_count_ind,"results/state-indicator_counts.csv", row.names = FALSE)
 ## END QUESTION 2 ### 
 
 
@@ -118,7 +159,8 @@ dev.off()
 df_sum_counts_per_state = cejest_raw %>%
   group_by(`State/Territory`)%>%
   tally(`Total threshold criteria exceeded`)
-df_sum_counts_per_state = df_sum_counts_per_state %>% rename(thd_exceeded_per_state = n) %>% left_join(df_count_ind[,1:2], by = "State/Territory")
+  df_sum_counts_per_state = df_sum_counts_per_state %>% rename(thd_exceeded_per_state = n) %>% left_join(df_count_ind[,1:2], by = "State/Territory")
+
 # average number of categories exceeded/per tract per state
 temp = cejest_raw %>%
   group_by(`State/Territory`)%>%
@@ -128,66 +170,75 @@ n_disadvantaged_tracts = cejest_cleaned_v1 %>% select(`State/Territory`, "state_
 df_sum_counts_per_state = df_sum_counts_per_state %>% left_join(n_disadvantaged_tracts)
 df_sum_counts_per_state = df_sum_counts_per_state %>% mutate(n_thd_exceeded_per_dac = thd_exceeded_per_state/state_tract_dac_n,
                                                              n_cat_exceeded_per_dac = cat_exceeded_per_state/state_tract_dac_n)
+# work on issues count
+df_issues_count = df_issues_count %>% 
+                  left_join(unique(df_sum_counts_per_state %>% 
+                  select(`State/Territory`,"state_tract_dac_n","tot_num_tracts_per_state")%>% 
+                  dplyr::rename(State =`State/Territory`)))
 
+df_issues_count = df_issues_count %>%
+                    mutate(cat_per_dac = n/state_tract_dac_n) %>%
+                    dplyr:: rename(cat_per_state = n)
+
+# bar plot of stacked category plot
+# pdf("results/plots/state_issue_barplot.pdf", width = 14, height = 6)
+# ggplot(df_issues_count, aes(fill=category, x=State, y = cat_per_dac)) + 
+#   geom_bar(position="stack", stat="identity") +theme_bw()+ 
+#   scale_fill_manual(values = cols) + #workforce development speed yellow
+#   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+#         panel.grid.major.x = element_blank(),
+#         panel.grid.minor.x = element_blank(),
+#         legend.position = "bottom") 
+
+## generating color columns
+cols <- c("Climate Change"= "#009E73", 
+          "Energy" = "#F98E1D", 
+          "Health" = "#DC267F", 
+          "Housing" = "#ffdd05", 
+          "Legacy Pollution"  = "#C04000",
+          "Transportation" = "#3A3B3C",
+          "Water/WasteWater" = "#0F52BA",
+          "Workforce Development" = "grey" )
+
+
+State_issue <- ggplot(df_issues_count  %>% group_by(State) %>% top_n(1,cat_per_dac) , aes(fill=category, x=State, y = cat_per_dac)) + 
+  geom_bar(position="stack", stat="identity") +theme_bw()+ 
+  scale_fill_manual("Categories", values = cols) + #workforce development speed yellow
+  ylab("Average Threshold Exceedence")+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        legend.position = "bottom"
+  ) + ggtitle("Most Prominent CEJST Category by State")
+
+plot(State_issue)
+#ggsave("results/plots/state-issue-wide-v1.jpeg", plot = State_issue, width = 35, height = 15, units = c("cm"), dpi = 700)
+#ggsave("results/plots/state-issue-v1.jpeg", plot = State_issue, width = 30, height = 20, units = c("cm"), dpi = 700)
+
+State_issue_no_wf <- ggplot(df_issues_count %>% filter(!category == "Workforce Development") %>% group_by(State) %>% top_n(1,cat_per_dac) , aes(fill=category, x=State, y = cat_per_dac)) + 
+  geom_bar(position="stack", stat="identity") +theme_bw()+ 
+  scale_fill_manual("Categories",values = cols) + #workforce development speed yellow
+  ylab("Average Threshold Exceedence")+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        legend.position = "bottom"
+  ) + ggtitle("Most Prominent CEJST Category by State (Excluding Workforce Development)")
+
+plot(State_issue_no_wf)
+
+#ggsave("results/plots/state-issue_no-wf-wide-v1.jpeg", plot = State_issue_no_wf, width = 35, height = 15, units = c("cm"), dpi = 700)
+
+#ggsave("results/plots/state-issue_no-wf-v1.jpeg", plot = State_issue_no_wf, width = 30, height = 20, units = c("cm"), dpi = 700)
+
+dev.off()
 ## writing out as csv ## 
 #write.csv(df_sum_counts_per_state,"results/state-avg_cat_threshold_exceeded_per_dac.csv", row.names = FALSE)
-
 ## END QUESTION 3 ### 
 
 
-## QUESTION 4:  Census tract map of indicator count by census tract ##
-state_list  = unique(cejest_cleaned_v1$`State/Territory`)
-US_tracts = data.frame()
-for ( i in seq_along(state_list)) {
-  temp = tracts(state = state_list[i],year = 2010)
-  US_tracts = rbind(US_tracts,temp)
-}
-US_tracts_backup = US_tracts
-US_tracts_simp = US_tracts %>% st_simplify(dTolerance = 50000)
-US_tracts = US_tracts %>% select("GEOID10","geometry") %>% right_join(cejest_raw %>% rename(GEOID10 = `Census tract 2010 ID`),by = "GEOID10")
-
-
-geo_data = US_tracts %>% filter(!!sym(ind_list[i]) == TRUE)
-labels <-sprintf(
-  "<strong>%s</strong><br/> %s %s",
-  gsub("Greater than or equal to the 90th percentile for ","",  ind_list[i]), geo_data$`County Name`,geo_data$`State/Territory` )%>%lapply(htmltools::HTML)
-
-leaflet() %>%
-  addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery") %>%
-  addProviderTiles(providers$Stamen.TonerLite, group = "Toner Lite") %>%
-  addLayersControl(baseGroups = c("Toner Lite", "World Imagery")) %>%
-  addPolygons(data = geo_data,smoothFactor = 2, weight = 0.2, color = "black", opacity = 1, fillOpacity = 1,
-              fillColor = "grey",
-              highlightOptions = highlightOptions(color = "white", weight = 2,
-                                                  bringToFront = TRUE),
-              label = ~labels,
-              labelOptions = labelOptions(noHide = F, textsize = "15px")
-  ) %>%
-  setView(lat = 41.62531, lng = -97.71755, zoom = 3)
-
-## save US tracts data
-#st_write(US_tracts %>% select(GEOID10,geometry), "results/US_tracts_CejstV1_2010_boundary.shp")
-
-### Static version colored by threshold/catagory number ### 
-
-
-CA_tracts <- US_tracts %>%
-                         filter(`State/Territory` == "Maryland")%>%
-                         filter(`Total population` > 0)
-# %>%
-#                          filter(`Total threshold criteria exceeded` > 0)
-
-plot <- ggplot(CA_tracts)+
-  geom_sf(aes(fill = `Total threshold criteria exceeded`), linewidth = .01)+
-  scale_fill_gradient(low = "#02abe2", high = "#da222b", na.value = NA)+
-  theme_minimal()
-
-plot
-## END QUESTION 4 ### 
-
-
-### Question 5 ### 
-### Scatter plots of thresholds and catagories against race/income variables ##  
+### Question 4 ### 
+### Scatter plots of thresholds and categories against race/income variables ##  
 Threshold <- cejest_raw %>%
   select(4:16,24,25)%>%
   group_by(`Total threshold criteria exceeded`)%>%
@@ -198,7 +249,47 @@ Catagories <- cejest_raw %>%
   group_by(`Total categories exceeded`)%>%
   summarize_all(mean, na.rm = TRUE)
 
-#### HOLY SMOKES #### 
+Thresholds_sum <- cejest_raw %>%
+  select(4:16,24,25,23)%>%
+  group_by(`Total threshold criteria exceeded`)%>%
+  summarize_all(sum, na.rm = TRUE)%>%
+  dplyr::select(1,16)%>%
+  left_join(Threshold)
+
+#write.csv(Thresholds_sum ,"results/Thresholds_PopCharacteristics_v1.csv")
+
+Thresholds_sum <- Thresholds_sum * Thresholds_sum$`Total population`
+
+
+VariableMultiScatter <- Threshold %>% 
+                        select(1,2,7,15)%>%
+                        rename(`Below 200% of Federal Poverty Line` = `Adjusted percent of individuals below 200% Federal Poverty Line`)%>%
+                        pivot_longer(!`Total threshold criteria exceeded`,names_to="Demographics",values_to = "percent")
+
+VariableMultiScatterPlot <- ggplot(VariableMultiScatter %>% filter(`Total threshold criteria exceeded` >0), aes(x = `Total threshold criteria exceeded`, y = percent *100, fill = `Demographics`))+
+  #geom_point(fill = "#f45d00", color = "black", shape = 21, size = 6)+
+  xlab("Total Threshold Criteria Exceeded")+
+  ylab("% of Population")+
+  ylim(0,90)+
+  #geom_smooth(se = FALSE, aes(color = as.factor(PopulationVars)))+
+  geom_point(shape = 21, size = 3.5, color = "black")+
+  scale_colour_brewer(palette = "Dark2")+
+  theme_classic()+
+  labs(title = "", 
+       color = "Demographics:")+
+  theme(plot.title = element_text(face = "bold", size = 16))+
+  theme(legend.title = element_text(face = "bold"))+
+  theme(legend.text = element_text(size = 10), legend.position = "bottom")+
+  theme(axis.title = element_text(size = 12),
+        panel.background = element_rect(fill = "transparent",
+                                       colour = NA_character_),
+        plot.background = element_rect(fill = "transparent",
+                                        colour = NA_character_))
+plot(VariableMultiScatterPlot)
+#ggsave("results/plots/thresholds-race-pov_v2.png", plot = VariableMultiScatterPlot, units = "cm", width = 26, height = 16, dpi = 700, bg = "transparent")
+
+
+#### DEMOG VARS AGAINST THRESHOLD COUNT - HOLY SMOKES #### 
 ggplot(Threshold, aes(x = `Total threshold criteria exceeded`, y = `Percent Black or African American alone` *100))+
   geom_point(fill = "#f45d00", color = "black", shape = 21, size = 6)+
   xlab("Total Threshold Criteria Exceeded")+
@@ -218,6 +309,22 @@ ggplot(Threshold, aes(x = `Total threshold criteria exceeded`, y = `Adjusted per
   labs(title = "CEJST Census Tract Threshold Count and Individuals 200% Below Federal Povery Rate", 
        subtitle = "CEJST's binary catagorization hides significant economic inequity",
        caption = "CEJST Version 1 data accessed 02.01.2023, analyzed by Environmental Policy Innovation Center")
+## Chart of all race categories against thresholds ## 
+
+
+
+## Histogram of Thresholds 
+ggplot(cejest_raw %>% filter(`Total threshold criteria exceeded` > 0), aes(x=`Total threshold criteria exceeded`)) + 
+  geom_histogram(colour="black", fill="white", bins = 200)+
+  xlab("Total CEJST Threshold Criteria Exceeded")+
+  ylab("Number of Census Tracts")+
+  labs(title = "",
+       subtitle = "")+
+#  geom_vline(aes(xintercept=1.65),
+         #    color="red", linetype="dashed", size=.5)+ 
+  theme_classic()
+
+
 
 
 ### Question 

@@ -1,0 +1,34 @@
+variable,category
+Is low income,Workforce Development
+expected agriculture loss rate and is low income,Climate Change
+expected building loss rate and is low income,Climate Change
+expected population loss rate and is low income,Climate Change
+share of properties at risk of flood in 30 years,Climate Change
+share of properties at risk of flood in 30 years and is low income,Climate Change
+share of properties at risk of fire in 30 years,Climate Change
+share of properties at risk of fire in 30 years and is low income,Climate Change
+energy burden and is low income,Energy
+PM2.5 exposure and is low income,Energy
+diesel particulate matter and is low income,Transportation
+traffic proximity and is low income,Transportation
+DOT transit barriers and is low income,Transportation
+housing burden and is low income,Housing
+"lead paint, the median house value is less than 90th percentile and is low income",Housing
+share of the tract's land area that is covered by impervious surface or cropland as a percent and is low income,Housing
+share of the tract's land area that is covered by impervious surface or cropland as a percent,Housing
+proximity to hazardous waste facilities and is low income,Legacy Pollution
+proximity to superfund sites and is low income,Legacy Pollution
+proximity to RMP sites and is low income,Legacy Pollution
+wastewater discharge and is low income,Water/Wastewater
+leaky underground storage tanks and is low income,Water/Wastewater
+asthma and is low income,Health
+diabetes and is low income,Health
+heart disease and is low income,Health
+low life expectancy and is low income,Health
+low median household income as a percent of area median income and has low HS attainment,Workforce Development
+households in linguistic isolation and has low HS attainment,Workforce Development
+unemployment and has low HS attainment,Workforce Development
+households at or below 100% federal poverty level and has low HS attainment,Workforce Development
+unemployment and has low HS education in 2009 (island areas),Workforce Development
+households at or below 100% federal poverty level and has low HS education in 2009 (island areas),Workforce Development
+low median household income as a percent of area median income and has low HS education in 2009 (island areas),Workforce Development
