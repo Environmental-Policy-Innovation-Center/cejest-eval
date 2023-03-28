@@ -256,10 +256,7 @@ Thresholds_sum <- cejest_raw %>%
   dplyr::select(1,16)%>%
   left_join(Threshold)
 
-#write.csv(Thresholds_sum ,"results/Thresholds_PopCharacteristics_v1.csv")
-
-Thresholds_sum <- Thresholds_sum * Thresholds_sum$`Total population`
-
+write.csv(Thresholds_sum ,"results/Thresholds_PopCharacteristics_v1.csv")
 
 VariableMultiScatter <- Threshold %>% 
   select(1,2,7,15)%>%
