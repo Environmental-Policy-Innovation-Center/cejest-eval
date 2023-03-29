@@ -1,7 +1,7 @@
 # EPIC's CEJST Evaluation Script 
 
 # About
-In partnership with WE ACT and The Center for Neighborhood Technology, EPIC produced a series of analyses on the White House's Climate and Economic Justice Screening Tool - [CEJST.](https://screeningtool.geoplatform.gov/en/#8/0/0)
+Between January 2023 and march 2023, in partnership with WE ACT and The Center for Neighborhood Technology, EPIC produced a series of analyses on the White House's Climate and Economic Justice Screening Tool - [CEJST.](https://screeningtool.geoplatform.gov/en/#8/0/0)
 The results were presented in the blog [CEJST is a simple map, with big implications and attention to cumulative burdens matters](https://www.policyinnovation.org/blog/cejst-simple-map-big-implications) and a [webinar](https://www.youtube.com/watch?v=iVJoK32waCw).
 
 # Disclaimer 
